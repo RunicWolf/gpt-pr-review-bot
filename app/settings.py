@@ -15,6 +15,10 @@ class Settings(BaseSettings):
     max_files: int = 6
     max_patch_chars: int = 8000  # limit context size to control token usage
 
+    review_mode: str = "comment"  # "comment" (single top-level) or "review" (inline PR review)
+    max_inline_comments: int = 12  # cap the number of inline comments we’ll try to post
+    include_rules_preamble: bool = True  # adds the rules summary in markdown header
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
 settings = Settings()
