@@ -1,0 +1,31 @@
+name: CI
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Install Python via GitHub's runner (respects .python-version)
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: ".python-version"
+
+      # Install uv (with cache)
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      # Install all deps (prod + dev) from the lockfile
+      - name: Sync project
+        run: uv sync --locked --all-extras --dev
+
+      # Run tests
+      - name: Test
+        run: uv run pytest -q
