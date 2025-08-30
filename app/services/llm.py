@@ -1,5 +1,6 @@
 from typing import List, Dict
 from openai import OpenAI
+from app.settings import settings
 
 class LLMClient:
     def __init__(self, api_key: str, model: str):
@@ -13,7 +14,8 @@ class LLMClient:
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
             ],
-            temperature=0.2,
+            temperature=settings.openai_temperature,
+            max_tokens=settings.openai_max_tokens,
         )
         return resp.choices[0].message.content.strip()
 
