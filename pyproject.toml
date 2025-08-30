@@ -18,12 +18,3 @@ dev = [
     "pytest>=8.4.1",
     "ruff>=0.12.11",
 ]
-
-[tool.uv.scripts]
-dev = "uvicorn app.main:app --reload --port 8000"
-test = "pytest -v"
-lint = "ruff check ."
-fmt = "ruff format ."
-review = "python -m app.cli_review"
-summary = "python -m tools.ci_summary"
-status = "python -m tools.ci_status"

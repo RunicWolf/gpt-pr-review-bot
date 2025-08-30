@@ -42,10 +42,18 @@ jobs:
           ENFORCE_GATE_ON_CI: "false"    # fail job when REQUEST_CHANGES if "true"
         run: uv run python -m app.cli_review
 
-      - name: 🧾 Job Summary
+      - name: Publish review summary to GitHub Job Summary
         if: always()
-        run: uv run python tools/ci_summary.py
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          echo "## GPT PR Review Summary" >> "$GITHUB_STEP_SUMMARY"
+          uv run python -m tools.ci_summary >> "$GITHUB_STEP_SUMMARY"
 
-      - name: 🚦 Enforce Gate (optional)
+      - name: Gate based on review outcome (optional)
         if: always()
-        run: uv run python tools/ci_status.py
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          uv run python -m tools.ci_status
+
