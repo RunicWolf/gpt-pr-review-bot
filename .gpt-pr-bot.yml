@@ -1,0 +1,14 @@
+# Repo-specific config
+exclude_globs:
+  - "**/*.lock"
+  - "**/migrations/**"
+include_globs:
+  - "src/**"
+severity_gate: medium
+review_mode: review
+max_files: 8
+max_inline_comments: 20
+openai_model: gpt-4o
+custom_rules:
+  - "For Python, check for missing type hints."
+  - "Flag print() in production code."

@@ -1,5 +1,6 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Optional, List
+from app.config_loader import load_repo_config
 
 class Settings(BaseSettings):
     # OpenAI
@@ -58,3 +59,10 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
 settings = Settings()
+
+# Overlay with repo config if present
+repo_conf = load_repo_config()
+for k, v in repo_conf.items():
+    key = k.lower()
+    if hasattr(settings, key):
+        setattr(settings, key, v)
