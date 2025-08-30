@@ -12,3 +12,25 @@ repos:
       - id: end-of-file-fixer
       - id: trailing-whitespace
       - id: check-merge-conflict
+
+# .gpt-pr-bot.yml
+review_mode: comment            # or "review"
+severity_gate: high             # off|low|medium|high
+max_files: 6
+max_patch_chars: 8000
+max_total_patch_chars: 24000
+only_changed_lines: true
+changed_context_lines: 2
+include_rules_preamble: true
+enable_auto_labels: true
+enable_job_summary: true
+enforce_gate_on_ci: false
+label_prefix: gpt-review
+
+include_globs: []
+exclude_globs:
+  - "**/*.lock"
+  - "**/*.png"
+  - "**/*.jpg"
+  - "**/dist/**"
+  - "**/build/**"

@@ -2,15 +2,17 @@ name: PR Review (GPT)
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, ready_for_review]
 
 permissions:
   contents: read
   pull-requests: write
+  issues: write   # needed for labeling via Issues API
 
 jobs:
   review:
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
 
@@ -33,6 +35,46 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           PULL_REQUEST_NUMBER: ${{ github.event.pull_request.number }}
-          REVIEW_MODE: review   # <-- set to "comment" if you want only the single comment
-        run: uv run python app/cli_review.py
+          REVIEW_MODE: review            # set "comment" for a single top-level comment
+          # Optional toggles (can also be set in repo config or .env)
+          ENABLE_AUTO_LABELS: "true"     # maps to settings.enable_auto_labels
+          ENABLE_JOB_SUMMARY: "true"     # maps to settings.enable_job_summary
+          ENFORCE_GATE_ON_CI: "false"    # fail job when REQUEST_CHANGES if "true"
+        run: uv run python -m app.cli_review
 
+      - name: 🧾 Job Summary
+        if: always()
+        run: uv run python tools/ci_summary.py
+
+      - name: 🚦 Enforce Gate (optional)
+        if: always()
+        run: uv run python tools/ci_status.py
+
+      - name: Slack notify (optional)
+        if: ${{ secrets.SLACK_WEBHOOK_URL != '' }}
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          evt=$(cat .review_event 2>/dev/null || echo "COMMENT")
+          if [ "$evt" = "REQUEST_CHANGES" ]; then
+            status=":warning: Request changes"
+          else
+            status=":white_check_mark: Comment"
+          fi
+          text="*GPT PR Review:* ${status}\n<${PR_URL}|Open PR>"
+          curl -s -X POST -H 'Content-type: application/json' \
+            --data "{\"text\": \"${text}\"}" \
+            "$SLACK_WEBHOOK_URL"
+
+      - name: Discord notify (optional)
+        if: ${{ secrets.DISCORD_WEBHOOK_URL != '' }}
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          evt=$(cat .review_event 2>/dev/null || echo "COMMENT")
+          content="GPT PR Review finished: $evt — $PR_URL"
+          curl -s -H "Content-Type: application/json" \
+            -d "{\"content\": \"$content\"}" \
+            "$DISCORD_WEBHOOK_URL"

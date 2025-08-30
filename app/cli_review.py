@@ -14,6 +14,7 @@ from app.review_strategy import (
 )
 from app.inline_mapper import guess_line_for_hint
 from app.file_filters import should_include
+from app.diff_slimmer import slim_patch_to_changed  # <-- slimming helper
 
 SEVERITY_ORDER = {"low": 1, "medium": 2, "high": 3}
 STATUS_FILE = ".review_event"
@@ -82,6 +83,53 @@ def chunk_patches(patches: List[Dict], max_chars: int) -> List[List[Dict]]:
     return batches
 
 
+def _has_changes(p: str) -> bool:
+    """Return True if unified diff has at least one real added/removed line."""
+    for ln in p.splitlines():
+        if ln.startswith("+") and not ln.startswith("+++"):
+            return True
+        if ln.startswith("-") and not ln.startswith("---"):
+            return True
+    return False
+
+
+def _merge_hist(a: Dict[str, int], b: Dict[str, int]) -> Dict[str, int]:
+    out = dict(a)
+    for k, v in b.items():
+        out[k] = out.get(k, 0) + int(v)
+    return out
+
+
+def _metrics_from_parsed(parsed: Dict) -> Dict:
+    """
+    Build severity histogram and counts from the parsed LLM JSON:
+    {
+      files: [
+        { filename, comments: [{severity: low|medium|high, ...}, ...] },
+        ...
+      ]
+    }
+    """
+    severity = {"low": 0, "medium": 0, "high": 0}
+    files_count = 0
+    comments_count = 0
+
+    for f in parsed.get("files", []):
+        files_count += 1
+        for c in f.get("comments", []):
+            sev = str(c.get("severity", "medium")).lower()
+            if sev not in severity:
+                sev = "medium"
+            severity[sev] += 1
+            comments_count += 1
+
+    return {
+        "severity_histogram": severity,
+        "files_count": files_count,
+        "comments_count": comments_count,
+    }
+
+
 async def _post_single_comment(
     gh: GitHubClient, repo: str, pr_number: int, body: str, event: str
 ):
@@ -143,12 +191,33 @@ async def main() -> int:
             continue
         if "patch" not in f or not f["patch"]:
             continue
+
+        # Truncate large file diff
         patch = _truncate_patch(f["patch"], settings.max_patch_chars)
-        if total_chars + len(patch) > settings.max_total_patch_chars and selected:
+
+        # Slim to only changed lines with N lines of context; drop hunks with ignore marker.
+        # IMPORTANT: only slim when there are real +/- changes; otherwise keep patch as-is
+        slimmed = patch
+        if settings.only_changed_lines and _has_changes(patch):
+            slimmed = slim_patch_to_changed(
+                patch=patch,
+                ctx=settings.changed_context_lines,
+                marker=(settings.ignore_inline_marker or None),
+            )
+            # Keep output stable for tests that check string suffix exactly
+            slimmed = slimmed.rstrip("\n")
+
+        # If slimming removed everything (e.g., all hunks had ignore marker), skip file
+        if not slimmed.strip():
+            continue
+
+        # Respect total cap using the slimmed size
+        if total_chars + len(slimmed) > settings.max_total_patch_chars and selected:
             # stop taking more files once we hit the total cap
             break
-        selected.append({"filename": fname, "patch": patch})
-        total_chars += len(patch)
+
+        selected.append({"filename": fname, "patch": slimmed})
+        total_chars += len(slimmed)
         if len(selected) >= settings.max_files:
             break
 
@@ -184,12 +253,21 @@ async def main() -> int:
 
     # For the final rollup report
     all_batches_meta: List[Dict] = []
+    overall_sev = {"low": 0, "medium": 0, "high": 0}
+    overall_files = 0
+    overall_comments = 0
 
     # Process each batch independently
     for idx, batch in enumerate(batches, start=1):
         system, user = build_llm_prompt_from_patches(batch)
         raw = llm.review_patches_json(batch, system, user)["text"]
         parsed = parse_llm_json_or_fallback(raw)
+
+        # Per-batch metrics
+        m = _metrics_from_parsed(parsed)
+        overall_sev = _merge_hist(overall_sev, m["severity_histogram"])
+        overall_files += m["files_count"]
+        overall_comments += m["comments_count"]
 
         # Decide event (respect local gate)
         llm_decision = str(parsed.get("decision", "comment")).lower()
@@ -266,6 +344,7 @@ async def main() -> int:
                 "summary_excerpt": summary_md[:180],
                 "files_in_batch": [p["filename"] for p in batch],
                 "inline_comments_posted": len(comments_payload) if inline_mode else 0,
+                "metrics": m,  # <-- per-batch metrics
             }
         )
 
@@ -280,13 +359,36 @@ async def main() -> int:
     _write_report(
         {
             "overall_event": overall_event,
-            "batches": all_batches_meta,
             "review_mode": settings.review_mode,
             "severity_gate": settings.severity_gate,
             "max_files": settings.max_files,
             "max_inline_comments": settings.max_inline_comments,
+            "metrics": {
+                "overall_severity_histogram": overall_sev,
+                "overall_files_reviewed": overall_files,
+                "overall_comments": overall_comments,
+            },
+            "batches": all_batches_meta,
         }
     )
+
+    # Optional: apply PR labels summarizing the review outcome + highest severity
+    try:
+        if settings.enable_auto_labels:
+            prefix = (settings.label_prefix or "gpt-review").strip() or "gpt-review"
+            outcome_label = f"{prefix}:{'request-changes' if overall_event == 'REQUEST_CHANGES' else 'comment'}"
+
+            if overall_sev.get("high", 0) > 0:
+                sev_label = f"{prefix}:high"
+            elif overall_sev.get("medium", 0) > 0:
+                sev_label = f"{prefix}:medium"
+            else:
+                sev_label = f"{prefix}:low"
+
+            await gh.add_labels(repo, int(pr_number), [outcome_label, sev_label])
+    except Exception as e:
+        # Non-fatal: labeling is best-effort
+        print(f"Labeling skipped: {e}")
 
     return 0
 

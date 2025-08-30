@@ -1,11 +1,13 @@
-from typing import Dict, List, Optional
+from typing import Dict, List
 import httpx
+
 
 class GitHubReviewsClient:
     """
     Minimal wrapper for creating a single PR review with multiple inline comments.
     Falls back to a top-level issue comment if needed in the CLI.
     """
+
     def __init__(self, token: str):
         self.token = token
         self.base_url = "https://api.github.com"

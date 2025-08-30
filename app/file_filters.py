@@ -2,8 +2,10 @@ from fnmatch import fnmatch
 from typing import List
 import os
 
+
 def _basename(path: str) -> str:
     return os.path.basename(path or "")
+
 
 def _strip_leading_glob_dirs(pat: str) -> str:
     # turn "**/foo/*.lock" -> "foo/*.lock"; "**/*.lock" -> "*.lock"
@@ -12,6 +14,7 @@ def _strip_leading_glob_dirs(pat: str) -> str:
     while pat.startswith("./"):
         pat = pat[2:]
     return pat
+
 
 def matches_any(path: str, patterns: List[str]) -> bool:
     """
@@ -50,6 +53,7 @@ def matches_any(path: str, patterns: List[str]) -> bool:
             return True
 
     return False
+
 
 def should_include(path: str, includes: List[str], excludes: List[str]) -> bool:
     if includes:

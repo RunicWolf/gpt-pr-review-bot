@@ -1,77 +1,114 @@
-from typing import List, Dict, Optional
+from typing import List, Optional
+
 
 def find_addition_lines(patch: str) -> List[int]:
     """
-    Parse unified diff chunk and return a list of added line numbers on the RIGHT side.
-    We infer the right-side starting line from the @@ header: @@ -a,b +c,d @@
+    Heuristic: return a list of candidate line numbers for added lines in the unified diff.
+    This is the existing helper used by guess_line_for_hint as a fallback.
     """
-    if not patch:
-        return []
-    lines = patch.splitlines()
-    right_line = 0
-    added_lines: List[int] = []
-    i = 0
-    while i < len(lines):
-        line = lines[i]
-        if line.startswith("@@"):
-            # parse like: @@ -12,5 +34,8 @@
+    added_line_numbers: List[int] = []
+    current_target_line = 0
+
+    for ln in patch.splitlines():
+        # Hunk header: @@ -a,b +c,d @@
+        if ln.startswith("@@ "):
+            # Parse the +c,d portion to reset the "current target line".
             try:
-                header = line.split("@@")[1].strip()  # '-12,5 +34,8'
-                parts = header.split()
-                plus = [p for p in parts if p.startswith("+")][0]  # '+34,8'
-                start = plus[1:].split(",")[0]
-                right_line = int(start)
+                # naive parse: find the "+c,d" chunk
+                plus_index = ln.find("+")
+                space_index = ln.find(" ", plus_index)
+                plus_slice = (
+                    ln[plus_index + 1 : space_index]
+                    if space_index != -1
+                    else ln[plus_index + 1 :]
+                )
+                # c or c,d
+                c_str = plus_slice.split(",")[0]
+                current_target_line = (
+                    int(c_str) - 1
+                )  # will increment when we see context/added
             except Exception:
-                right_line = 0
+                current_target_line = 0
+            continue
+
+        # File header "+"
+        if ln.startswith("+++"):
+            continue
+        if ln.startswith("---"):
+            continue
+
+        # Added / removed / context
+        if ln.startswith("+"):
+            current_target_line += 1
+            added_line_numbers.append(current_target_line)
+        elif ln.startswith("-"):
+            # deletion does not advance target line number
+            pass
         else:
-            if line.startswith("+") and not line.startswith("+++"):
-                added_lines.append(right_line)
-                right_line += 1
-            elif line.startswith("-") and not line.startswith("---"):
-                # deletion only affects left; right stays same
-                pass
-            else:
-                # context line present on both sides
-                right_line += 1 if right_line > 0 else 0
-        i += 1
-    return added_lines
+            # context (' ' or anything else) advances target line
+            current_target_line += 1
+
+    return added_line_numbers
+
+
+# --- NEW: exact-match fast path on added lines --------------------------------
+def _first_added_line_containing(patch: str, token: str) -> Optional[int]:
+    """
+    If `token` appears in any real added line (+, not +++), return that 1-based line
+    number within the target hunk (GitHub RIGHT side).
+    """
+    token = (token or "").strip()
+    if not token:
+        return None
+
+    current_target_line = 0
+    for ln in patch.splitlines():
+        if ln.startswith("@@ "):
+            try:
+                plus_index = ln.find("+")
+                space_index = ln.find(" ", plus_index)
+                plus_slice = (
+                    ln[plus_index + 1 : space_index]
+                    if space_index != -1
+                    else ln[plus_index + 1 :]
+                )
+                c_str = plus_slice.split(",")[0]
+                current_target_line = int(c_str) - 1
+            except Exception:
+                current_target_line = 0
+            continue
+
+        if ln.startswith("+++") or ln.startswith("---"):
+            continue
+
+        if ln.startswith("+") and not ln.startswith("+++"):
+            current_target_line += 1
+            if token in ln:
+                return current_target_line
+        elif ln.startswith("-"):
+            # deletion
+            pass
+        else:
+            # context
+            current_target_line += 1
+
+    return None
+
+
+# ------------------------------------------------------------------------------
+
 
 def guess_line_for_hint(patch: str, hint: str) -> Optional[int]:
     """
-    Try to find an added line that contains the hint (substring match).
-    If not found, return the first added line (so comment still attaches).
+    Best-effort mapping of an LLM hint (token/substring) to a target line number on the RIGHT side.
+    1) Try exact match on added lines.
+    2) Fall back to the first added line in the patch (existing behavior).
     """
-    if not patch:
-        return None
-    lines = patch.splitlines()
-    # Compute right-side line numbers for each added line
-    added = []
-    right_line = 0
-    for i, line in enumerate(lines):
-        if line.startswith("@@"):
-            try:
-                header = line.split("@@")[1].strip()
-                plus = [p for p in header.split() if p.startswith("+")][0]
-                start = plus[1:].split(",")[0]
-                right_line = int(start)
-            except Exception:
-                right_line = 0
-        else:
-            if line.startswith("+") and not line.startswith("+++"):
-                content = line[1:]
-                added.append((right_line, content))
-                right_line += 1
-            elif line.startswith("-") and not line.startswith("---"):
-                pass
-            else:
-                right_line += 1 if right_line > 0 else 0
+    # Fast path: exact match on added lines
+    hit = _first_added_line_containing(patch, hint)
+    if hit is not None:
+        return hit
 
-    if not added:
-        return None
-
-    if hint:
-        for ln, content in added:
-            if hint in content:
-                return ln
-
-    return added[0][0]  # first added line number
+    # Fallback: first added line heuristic
+    candidates = find_addition_lines(patch)
+    return candidates[0] if candidates else None

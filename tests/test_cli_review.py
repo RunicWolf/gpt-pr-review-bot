@@ -1,8 +1,6 @@
 import asyncio
-import types
 from typing import List, Dict
 
-import builtins
 import app.cli_review as cli  # imports settings + classes
 from app.services.github import GitHubClient
 from app.services.llm import LLMClient
@@ -15,9 +13,6 @@ def _run(coro):
 
 
 def test_cli_review_posts_review_when_patches_present(monkeypatch):
-
-    
-
     # --- arrange ---
     settings.github_repository = "owner/repo"
     settings.pull_request_number = 42
@@ -42,21 +37,31 @@ def test_cli_review_posts_review_when_patches_present(monkeypatch):
             {"filename": "README.md", "patch": "@@ -1 +1 @@\n- hello\n+ world\n"},
         ]
 
-    async def fake_post_issue_comment(self, repo: str, issue_number: int, body: str) -> Dict:
+    async def fake_post_issue_comment(
+        self, repo: str, issue_number: int, body: str
+    ) -> Dict:
         posted_bodies.append(body)
         return {"id": 123, "body": body}
 
-    def fake_review_patches_json(self, patches: List[Dict], system: str, user: str) -> Dict:
+    def fake_review_patches_json(
+        self, patches: List[Dict], system: str, user: str
+    ) -> Dict:
         # Ensure we received structured patches
         assert isinstance(patches, list) and patches
         assert patches[0]["filename"] == "app/main.py"
         # Return JSON the CLI will parse
-        return {"text": '{"summary_markdown":"- Looks good overall.\\n- Consider adding more tests.","files":[]}'}
+        return {
+            "text": '{"summary_markdown":"- Looks good overall.\\n- Consider adding more tests.","files":[]}'
+        }
 
     # Monkeypatch network/API layers
     monkeypatch.setattr(GitHubClient, "list_pr_files", fake_list_pr_files, raising=True)
-    monkeypatch.setattr(GitHubClient, "post_issue_comment", fake_post_issue_comment, raising=True)
-    monkeypatch.setattr(LLMClient, "review_patches_json", fake_review_patches_json, raising=True)
+    monkeypatch.setattr(
+        GitHubClient, "post_issue_comment", fake_post_issue_comment, raising=True
+    )
+    monkeypatch.setattr(
+        LLMClient, "review_patches_json", fake_review_patches_json, raising=True
+    )
 
     # --- act ---
     rc = asyncio.run(cli.main())
@@ -68,7 +73,6 @@ def test_cli_review_posts_review_when_patches_present(monkeypatch):
     assert body.startswith("## 🤖 GPT Code Review")
     assert "Looks good overall" in body
     assert "_This is an automated first-pass review." in body
-
 
 
 def test_cli_review_handles_no_patches(monkeypatch):
@@ -84,13 +88,17 @@ def test_cli_review_handles_no_patches(monkeypatch):
         # No 'patch' keys, e.g., binary files or empty diff
         return [{"filename": "diagram.png"}, {"filename": "large.bin"}]
 
-    async def fake_post_issue_comment(self, repo: str, issue_number: int, body: str) -> Dict:
+    async def fake_post_issue_comment(
+        self, repo: str, issue_number: int, body: str
+    ) -> Dict:
         posted_bodies.append(body)
         return {"id": 456, "body": body}
 
     # Monkeypatch GitHub; LLM won’t be called
     monkeypatch.setattr(GitHubClient, "list_pr_files", fake_list_pr_files, raising=True)
-    monkeypatch.setattr(GitHubClient, "post_issue_comment", fake_post_issue_comment, raising=True)
+    monkeypatch.setattr(
+        GitHubClient, "post_issue_comment", fake_post_issue_comment, raising=True
+    )
 
     # --- act ---
     rc = _run(cli.main())
@@ -100,13 +108,12 @@ def test_cli_review_handles_no_patches(monkeypatch):
     assert len(posted_bodies) == 1
     assert "No text patches found to review" in posted_bodies[0]
 
+
 def test_cli_review_truncates_large_patches(monkeypatch):
     from app.settings import settings
     from app.services.github import GitHubClient
     from app.services.llm import LLMClient
     import app.cli_review as cli
-
-    
 
     settings.github_repository = "owner/repo"
     settings.pull_request_number = 101
@@ -129,6 +136,7 @@ def test_cli_review_truncates_large_patches(monkeypatch):
         return [{"filename": "app/very_long.py", "patch": long_patch}]
 
     posted_bodies = []
+
     async def fake_post_issue_comment(self, repo: str, issue_number: int, body: str):
         posted_bodies.append(body)
         return {"id": 999, "body": body}
@@ -144,8 +152,12 @@ def test_cli_review_truncates_large_patches(monkeypatch):
         return {"text": '{"summary_markdown":"Truncation verified.","files":[]}'}
 
     monkeypatch.setattr(GitHubClient, "list_pr_files", fake_list_pr_files, raising=True)
-    monkeypatch.setattr(GitHubClient, "post_issue_comment", fake_post_issue_comment, raising=True)
-    monkeypatch.setattr(LLMClient, "review_patches_json", fake_review_patches_json, raising=True)
+    monkeypatch.setattr(
+        GitHubClient, "post_issue_comment", fake_post_issue_comment, raising=True
+    )
+    monkeypatch.setattr(
+        LLMClient, "review_patches_json", fake_review_patches_json, raising=True
+    )
 
     # --- act ---
     rc = asyncio.run(cli.main())
@@ -153,4 +165,3 @@ def test_cli_review_truncates_large_patches(monkeypatch):
     # --- assert ---
     assert rc == 0
     assert posted_bodies and "Truncation verified." in posted_bodies[0]
-

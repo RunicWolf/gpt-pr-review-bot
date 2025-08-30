@@ -2,6 +2,7 @@ from typing import List, Dict
 from openai import OpenAI
 from app.settings import settings
 
+
 class LLMClient:
     def __init__(self, api_key: str, model: str):
         self.client = OpenAI(api_key=api_key)

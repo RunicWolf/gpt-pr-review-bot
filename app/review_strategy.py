@@ -22,9 +22,11 @@ LANG_BY_EXT = {
     ".yml": "YAML",
 }
 
+
 def _language_of(filename: str) -> str:
     _, ext = os.path.splitext(filename or "")
     return LANG_BY_EXT.get(ext.lower(), "Code")
+
 
 JSON_INSTRUCTIONS = (
     "Return ONLY JSON with this exact shape:\n"
@@ -44,9 +46,12 @@ JSON_INSTRUCTIONS = (
     "Do not include any other keys. Keep each comment crisp and actionable."
 )
 
+
 def build_llm_prompt_from_patches(patches: List[Dict]) -> Tuple[str, str]:
-    langs = sorted({_language_of(p['filename']) for p in patches}) if patches else []
-    lang_line = f"Target languages: {', '.join(langs)}." if langs else "Target language: Code."
+    langs = sorted({_language_of(p["filename"]) for p in patches}) if patches else []
+    lang_line = (
+        f"Target languages: {', '.join(langs)}." if langs else "Target language: Code."
+    )
 
     rules = get_rulepack(langs)
     rules_text = "\n".join(f"- {r}" for r in rules)
@@ -63,16 +68,22 @@ def build_llm_prompt_from_patches(patches: List[Dict]) -> Tuple[str, str]:
         f"{lang_line}\n"
         "Focus on Security, Tests, Complexity, and Style.\n"
         "Assign a severity to each comment and an overall decision.\n"
-        + extra + "\n"
+        + extra
+        + "\n"
         + JSON_INSTRUCTIONS
     )
     user = f"Review the following diffs and produce structured JSON.\n\n{files_blob}"
     return system, user
 
+
 def parse_llm_json_or_fallback(text: str) -> Dict:
     try:
         data = json.loads(text)
-        if not isinstance(data, dict) or "files" not in data or "summary_markdown" not in data:
+        if (
+            not isinstance(data, dict)
+            or "files" not in data
+            or "summary_markdown" not in data
+        ):
             raise ValueError("Missing required keys")
         # fill defaults
         data.setdefault("decision", "comment")
@@ -82,8 +93,4 @@ def parse_llm_json_or_fallback(text: str) -> Dict:
         return data
     except Exception:
         # Fallback when the model didn't obey JSON shape
-        return {
-            "summary_markdown": text,
-            "decision": "comment",
-            "files": []
-        }
+        return {"summary_markdown": text, "decision": "comment", "files": []}
