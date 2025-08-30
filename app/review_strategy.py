@@ -1,4 +1,5 @@
 from typing import List, Dict, Tuple
+from app.rulepacks import get_rulepack
 import json
 import os
 
@@ -44,20 +45,25 @@ JSON_INSTRUCTIONS = (
 )
 
 def build_llm_prompt_from_patches(patches: List[Dict]) -> Tuple[str, str]:
-    # Build the language summary we pass to the system prompt
-    langs = sorted({ _language_of(p['filename']) for p in patches }) if patches else []
-    lang_line = f"Target languages detected: {', '.join(langs)}." if langs else "Target language: Code."
+    langs = sorted({_language_of(p['filename']) for p in patches}) if patches else []
+    lang_line = f"Target languages: {', '.join(langs)}." if langs else "Target language: Code."
 
-    files_md = []
-    for p in patches:
-        files_md.append(f"### {p['filename']}\n```\n{p['patch']}\n```")
+    rules = get_rulepack(langs)
+    rules_text = "\n".join(f"- {r}" for r in rules)
+    if rules_text:
+        extra = f"\nAdditional language-specific rules:\n{rules_text}"
+    else:
+        extra = ""
+
+    files_md = [f"### {p['filename']}\n```\n{p['patch']}\n```" for p in patches]
     files_blob = "\n\n".join(files_md) if files_md else "_No patches_"
 
     system = (
         "You are a meticulous senior code reviewer.\n"
         f"{lang_line}\n"
         "Focus on Security, Tests, Complexity, and Style.\n"
-        "Assign a severity to each comment (low|medium|high) and an overall decision.\n"
+        "Assign a severity to each comment and an overall decision.\n"
+        + extra + "\n"
         + JSON_INSTRUCTIONS
     )
     user = f"Review the following diffs and produce structured JSON.\n\n{files_blob}"
