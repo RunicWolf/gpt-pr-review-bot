@@ -65,7 +65,7 @@ def test_cli_review_posts_review_when_patches_present(monkeypatch):
     assert rc == 0
     assert len(posted_bodies) == 1
     body = posted_bodies[0]
-    assert "## 🤖 GPT Code Review (alpha)" in body
+    assert body.startswith("## 🤖 GPT Code Review")
     assert "Looks good overall" in body
     assert "_This is an automated first-pass review." in body
 
