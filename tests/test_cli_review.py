@@ -15,6 +15,9 @@ def _run(coro):
 
 
 def test_cli_review_posts_review_when_patches_present(monkeypatch):
+
+    
+
     # --- arrange ---
     settings.github_repository = "owner/repo"
     settings.pull_request_number = 42
@@ -24,6 +27,10 @@ def test_cli_review_posts_review_when_patches_present(monkeypatch):
     settings.max_files = 5
     settings.max_patch_chars = 2000
     settings.review_mode = "comment"  # ensure single comment path
+
+    # Neutralize repo config filtering for this test
+    settings.include_globs = []
+    settings.exclude_globs = []
 
     posted_bodies: List[str] = []
 
@@ -99,12 +106,18 @@ def test_cli_review_truncates_large_patches(monkeypatch):
     from app.services.llm import LLMClient
     import app.cli_review as cli
 
+    
+
     settings.github_repository = "owner/repo"
     settings.pull_request_number = 101
     settings.github_token = "ghs_mock"
     settings.openai_api_key = "sk-mock"
     settings.openai_model = "gpt-4o-mini"
     settings.review_mode = "comment"
+
+    # Neutralize repo config filtering for this test
+    settings.include_globs = []
+    settings.exclude_globs = []
 
     # Make truncation very strict so it's easy to assert
     settings.max_patch_chars = 50

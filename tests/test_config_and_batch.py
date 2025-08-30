@@ -15,5 +15,7 @@ def test_chunk_patches_splits():
         {"filename": "c.py", "patch": "+" * 70},
     ]
     batches = chunk_patches(patches, max_chars=100)
-    assert len(batches) == 2
-    assert sum(len(p["patch"]) for p in batches[0]) <= 100
+    assert len(batches) == 3
+    for b in batches:
+        assert sum(len(p["patch"]) for p in b) <= 100
+
